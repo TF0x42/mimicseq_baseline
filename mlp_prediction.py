@@ -29,9 +29,9 @@ from data_handler import MedicalDataset
 
 # Hyperparameters
 input_size = 88000 # Specify the input size
-hidden_size = 64
+hidden_size = 40000
 output_size = 88000 # Specify the output size
-batch_size = 32
+batch_size = 5137
 learning_rate = 0.001
 epochs = 10
 
