@@ -8,9 +8,9 @@ import torch.nn as nn
 class MLP(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(MLP, self).__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_size, output_size)
+        self.fc1 = nn.Linear(input_size, hidden_size).type(torch.float64)
+        self.relu = nn.ReLU().type(torch.float64)
+        self.fc2 = nn.Linear(hidden_size, output_size).type(torch.float64)
 
     def forward(self, x):
         x = self.fc1(x)
@@ -28,9 +28,9 @@ from sklearn.metrics import accuracy_score
 from data_handler import MedicalDataset
 
 # Hyperparameters
-input_size = 87000 # Specify the input size
+input_size = 88000 # Specify the input size
 hidden_size = 64
-output_size = 87000 # Specify the output size
+output_size = 88000 # Specify the output size
 batch_size = 32
 learning_rate = 0.001
 epochs = 10
@@ -46,7 +46,7 @@ valid_loader = DataLoader(valid_dataset, batch_size=batch_size)
 model = MLP(input_size, hidden_size, output_size)
 
 # Define the loss function and optimizer
-criterion = nn.CrossEntropyLoss()
+criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
 # Training loop
@@ -56,28 +56,29 @@ for epoch in range(epochs):
     for inputs, targets in train_loader:
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(outputs, targets.squeeze().long())  # Assuming CrossEntropyLoss and single-label classification
+        loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
+        print(total_loss)
 
     average_loss = total_loss / len(train_loader)
     print(f"Epoch [{epoch + 1}/{epochs}] Training Loss: {average_loss:.4f}")
 
     # Validation
-    model.eval()
-    with torch.no_grad():
-        valid_predictions = []
-        valid_targets = []
+    # model.eval()
+    # with torch.no_grad():
+    #     valid_predictions = []
+    #     valid_targets = []
 
-        for inputs, targets in valid_loader:
-            outputs = model(inputs)
-            _, predicted = torch.max(outputs, 1)
-            valid_predictions.extend(predicted.cpu().numpy())
-            valid_targets.extend(targets.squeeze().cpu().numpy())
+    #     for inputs, targets in valid_loader:
+    #         outputs = model(inputs)
+    #         _, predicted = torch.max(outputs, 1)
+    #         valid_predictions.extend(predicted.cpu().numpy())
+    #         valid_targets.extend(targets.squeeze().cpu().numpy())
 
-        accuracy = accuracy_score(valid_targets, valid_predictions)
-        print(f"Epoch [{epoch + 1}/{epochs}] Validation Accuracy: {accuracy:.4f}")
+    #     accuracy = accuracy_score(valid_targets, valid_predictions)
+    #     print(f"Epoch [{epoch + 1}/{epochs}] Validation Accuracy: {accuracy:.4f}")
 
 print("Training finished!")
 
