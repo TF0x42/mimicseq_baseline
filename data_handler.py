@@ -1,87 +1,55 @@
-'''
-data imports, transformation, train-test-split, shifting
-'''
-
-import torch
 from torch.utils.data import Dataset
 import pandas as pd
-import pyarrow.parquet as pq
-
-
-
-class DataHandler():
-    def __init__(self):
-        pass
-
-    def load_data(self):
-        pass
-
-    def train_test_split(self):
-        pass
-
-    def test_data(self):
-
-        # # Reading a Parquet file
-        eventtypes = pd.read_parquet('data/eventtypes.parquet')
-        test_view = pd.read_parquet('data/test_view.parquet')
-        train_view = pd.read_parquet('data/train_view.parquet')
-        # # Viewing the data
-        print(eventtypes)
-        print(eventtypes.iloc[18901])
-        print(eventtypes.iloc[1184])
-        print(eventtypes.iloc[52132])
-        print(eventtypes.iloc[34122])
-        print("-----")
-        print(train_view)
-        unique_values = train_view["hadm_id"].unique()
-        for un in unique_values.tolist():
-            print(un)
-        print(len(unique_values))
-
-        print(train_view[train_view["hadm_id"]==23697777])
-        # import numpy as np
-        # event_embeddings_gpt3 = np.load("data/short.npy")
-        # print(len(event_embeddings_gpt3))
-        # print(len(event_embeddings_gpt3[0]))
-        # print(event_embeddings_gpt3)
-        # print("-----------------------------")
-        # print(test_view)
-
-
-
-
-# data_handler = DataHandler()
-# data_handler.test_data()
-
+import multiprocessing
+from datetime import timedelta
 
 '''
 Build custom Dataset class
 '''
 class MedicalDataset(Dataset):
-    def __init__(self, path = '/home/tobi/cooperation_projects/irregular_time_series/data/big_data'):
-        eventtypes = pd.read_parquet(path+'/eventtypes.parquet')
+    def __init__(self, path = '/home/tobi/cooperation_projects/irregular_time_series/data/big_data', min_num_events=10, days_distance_prediction=1, num_processes=73):
+        self.delta = timedelta(days=days_distance_prediction)
+        self.eventtypes = pd.read_parquet(path+'/eventtypes.parquet')
         test_view = pd.read_parquet(path+'/test.parquet')
-        self.train_data=[]
-        patients = []
-        current_sample_id = 0
-        self.sample_ids =[]
-        for i in range(73):
-            if i<10:
-                print(i)
-                self.train_data.append(pd.read_parquet(path+'/train-00000000000'+str(i)+'.parquet'))
-                self.sample_ids.append(int(self.train_data[i]['sample_id'].max()))
-                for k in range(len(self.train_data[i])):
-                    print(self.train_data[i]['sample_id'][k])
-                    print(self.train_data[i].iloc[k])
-                    print()
-                #filtered_df = train_data[i][train_data[i]['sample_id'] == 441854]
-                #print(filtered_df)
-            else:
-                print(i)
-                self.train_data.append(pd.read_parquet(path+'/train-0000000000'+str(i)+'.parquet'))
-                self.sample_ids.append(int(self.train_data[i]['sample_id'].max()))
-                #filtered_df = train_data[i][train_data[i]['sample_id'] == 441854]
-                #print(filtered_df)
+        self.min_num_events = min_num_events
+        self.process_data(3, path)
+        #self.multiprocessed_data_loading(num_processes, path)
+
+
+
+    def process_data(self, i, path):
+        print(str(i).zfill(2))
+        train_data = pd.read_parquet(path + '/train-0000000000' + str(i).zfill(2) + '.parquet')
+        sample_id_min = int(train_data['sample_id'].min())
+        sample_id_max = int(train_data['sample_id'].max())
+        data = []
+        for k in range(sample_id_max):
+            tmp = []
+            print(f"Process {i}, k={k}, total={sample_id_max}")
+            filtered_df = train_data[train_data['sample_id'] == sample_id_min + k]
+            tmp.append([k])
+            data_instance = []
+            label = []
+            for l in range(len(filtered_df)):
+                if filtered_df['eventtime'].iloc[len(filtered_df)-1] - filtered_df['eventtime'].iloc[l] > self.delta:
+                    data_instance.append(filtered_df['event_id'].iloc[l])
+                else:
+                    label.append(filtered_df['event_id'].iloc[l])
+            tmp.append(data_instance)
+            tmp.append(label)
+            data.append(tmp)
+        return data
+
+    def multiprocessed_data_loading(self, num_processes, path):
+        pool = multiprocessing.Pool(processes=num_processes)
+        args = [(i, path) for i in range(73)]
+        results = pool.starmap(self.process_data, args)
+        self.train_data = [item for sublist in results for item in sublist]
+        pool.close()
+        pool.join()
+
+
+
 
 
 

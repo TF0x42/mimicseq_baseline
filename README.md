@@ -1,5 +1,26 @@
 # irregular_time_series
 
+##  Dataset class
+
+
+
+##
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Dataset 
 
