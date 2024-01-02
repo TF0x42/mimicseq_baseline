@@ -2,3 +2,7 @@ other_projects/*
 data/*
 .env/*
 __pycache__/*
+test_model.sav
+testdata.csv
+eventtyper_tmp.csv
+filtered_df_train_5000.csv

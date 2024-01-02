@@ -10,12 +10,15 @@ import bisect
 Build custom Dataset class
 '''
 class MedicalDataset(Dataset):
-    def __init__(self, version='train', num_labels='c10', path = '/home/tobi/cooperation_projects/irregular_time_series/data/big_data', min_num_events=10, days_distance_prediction=1, num_processes=73):
+    def __init__(self, split_type="1day", version='train', num_labels='c10', path = '/home/tobi/cooperation_projects/irregular_time_series/data/big_data', min_num_events=10, days_distance_prediction=1, num_samples=10000):
+        self.num_samples = num_samples
+        self.split_type = split_type
         train_val_test = [0.7, 0.1, 0.2] # 49, 7, 14
         self.num_labels=num_labels
-        self.sample_ids=[0]*73
+        self.sample_ids=[0]*73  # max is 513741
         self.version = version
         self.delta = timedelta(days=days_distance_prediction)
+        self.delta2 = timedelta(days=2*days_distance_prediction)
         self.eventtypes = pd.read_parquet(path+'/eventtypes.parquet')
         self.eventtypes.head(100).to_csv("eventtyper_tmp.csv")
         self.min_num_events = min_num_events
@@ -32,134 +35,164 @@ class MedicalDataset(Dataset):
         if version=='test':
             self.test_data = pd.read_parquet(path+'/test.parquet')
 
-
     def __len__(self):
         if self.version=='train':
-            return 1000  #513741
+            return self.num_samples  #513741
         # if self.version=='val':
         #     return 100
         if self.version=='test':
-            return 100
+            return int(self.num_samples/10)
         
-
     def __getitem__(self, idx):
-        # if idx%20==0: # val, 10%= 10/100
-        #     pass 
-        # elif idx%4==0: # test, 10%=20/100
-        #     pass
-        # else: # train, 70% = 70/100
-        #     pass 
-        if self.version == 'train':
-            i = 0
-            while idx > self.sample_ids[i]:
-                i+=1
-            train = np.zeros(88000)
-            label_mapping = {
-                'event_id': 88000,
-                'c10': 10,
-                'c100': 100,
-                'c1000': 1000,
-                'c10000': 10000,
-            }
-            label2 = np.zeros(label_mapping.get(self.num_labels, 0))
-            tmp =[]
-            filtered_df = self.train_data[i][self.train_data[i]['sample_id'] == idx]
-            tmp.append([idx])
-            data_instance = []
-            label = []
-            for l in range(len(filtered_df)):
-                if filtered_df['eventtime'].iloc[len(filtered_df)-1] - filtered_df['eventtime'].iloc[l] > self.delta:
-                    if self.num_labels=='event_id':
-                        data_instance.append(filtered_df['event_id'].iloc[l])
-                    else: 
-                        data_instance.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
-                else:
-                    if self.num_labels=='event_id':
-                        label.append(filtered_df[self.num_labels].iloc[l])
-                    else:
-                        label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
-
-            tmp.append(data_instance)
-            tmp.append(label)
-            for a in tmp[1]:
-                train[a]=1
-            for a in tmp[2]:
-                label2[a]=1
-            return train.astype(float), label2.astype(float)
-        if self.version == 'test':
-            train = np.zeros(88000)
-            label_mapping = {
-                'event_id': 88000,
-                'c10': 10,
-                'c100': 100,
-                'c1000': 1000,
-                'c10000': 10000,
-            }
-            label2 = np.zeros(label_mapping.get(self.num_labels, 0))
-            tmp =[]
-            #print(self.test_data)
-            filtered_df = self.test_data[self.test_data['sample_id'] == idx]
-            print("hello")
-            print(filtered_df)
-            print("wtf")
+        ## Split Type: 1 day - 1 day
+        if self.split_type=='1day':
+            if self.version == 'train':
+                return np.zeros(88000), np.zeros(10)
+                i = 0
+                while idx > self.sample_ids[i]:
+                    i+=1
+                train = np.zeros(88000)
+                label_mapping = {
+                    'event_id': 88000,
+                    'c10': 10,
+                    'c100': 100,
+                    'c1000': 1000,
+                    'c10000': 10000,
+                }
+                label2 = np.zeros(label_mapping.get(self.num_labels, 0))
+                tmp =[]
+                filtered_df = self.train_data[i][self.train_data[i]['sample_id'] == idx]
+                tmp.append([idx])
+                data_instance = []
+                label = []
+                for l in range(len(filtered_df)):
+                    if filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] < self.delta:
+                        if self.num_labels=='event_id':
+                            data_instance.append(filtered_df['event_id'].iloc[l])
+                        else: 
+                            data_instance.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                    elif filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] > self.delta and filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] < self.delta2:
+                        if self.num_labels=='event_id':
+                            label.append(filtered_df[self.num_labels].iloc[l])
+                        else:
+                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                tmp.append(data_instance)
+                tmp.append(label)
+                for a in tmp[1]:
+                    train[a]=1
+                for a in tmp[2]:
+                    label2[a]=1
+                return train, label2 #.astype(float)
+            if self.version == 'test':
+                train = np.zeros(88000)
+                label_mapping = {
+                    'event_id': 88000,
+                    'c10': 10,
+                    'c100': 100,
+                    'c1000': 1000,
+                    'c10000': 10000,
+                }
+                label2 = np.zeros(label_mapping.get(self.num_labels, 0))
+                tmp =[]
+                filtered_df = self.test_data[self.test_data['sample_id'] == idx]
+                tmp.append([idx])
+                data_instance = []
+                label = []
+                for l in range(len(filtered_df)):
+                    if filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] < self.delta:
+                        if self.num_labels=='event_id':
+                            data_instance.append(filtered_df['event_id'].iloc[l])
+                        else: 
+                            data_instance.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            #print(filtered_df['eventtime'].iloc[l])
+                    elif filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] > self.delta and filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] < self.delta2:
+                        if self.num_labels=='event_id':
+                            label.append(filtered_df[self.num_labels].iloc[l])
+                        else:
+                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            #print(filtered_df['eventtime'].iloc[l])
+                tmp.append(data_instance)
+                tmp.append(label)
+                for a in tmp[1]:
+                    train[a]=1
+                for a in tmp[2]:
+                    label2[a]=1
+                return train.astype(float), label2.astype(float)
             
-            #print(filtered_df)
-            #print(filtered_df)
-            tmp.append([idx])
-            data_instance = []
-            label = []
-            for l in range(len(filtered_df)):
-                if filtered_df['eventtime'].iloc[len(filtered_df)-1] - filtered_df['eventtime'].iloc[l] > self.delta:
-                    if self.num_labels=='event_id':
-                        data_instance.append(filtered_df['event_id'].iloc[l])
-                    else: 
-                        data_instance.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
-                else:
-                    if self.num_labels=='event_id':
-                        label.append(filtered_df[self.num_labels].iloc[l])
+        ## Split Type: everything but last day - last day
+        if self.split_type=='everything_but_last_day':
+            if self.version == 'train':
+                i = 0
+                while idx > self.sample_ids[i]:
+                    i+=1
+                train = np.zeros(88000)
+                label_mapping = {
+                    'event_id': 88000,
+                    'c10': 10,
+                    'c100': 100,
+                    'c1000': 1000,
+                    'c10000': 10000,
+                }
+                label2 = np.zeros(label_mapping.get(self.num_labels, 0))
+                tmp =[]
+                filtered_df = self.train_data[i][self.train_data[i]['sample_id'] == idx]
+                tmp.append([idx])
+                data_instance = []
+                label = []
+                for l in range(len(filtered_df)):
+                    if filtered_df['eventtime'].iloc[len(filtered_df)-1] - filtered_df['eventtime'].iloc[l] > self.delta:
+                        if self.num_labels=='event_id':
+                            data_instance.append(filtered_df['event_id'].iloc[l])
+                        else: 
+                            data_instance.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
                     else:
-                        label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                        if self.num_labels=='event_id':
+                            label.append(filtered_df[self.num_labels].iloc[l])
+                        else:
+                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                tmp.append(data_instance)
+                tmp.append(label)
+                for a in tmp[1]:
+                    train[a]=1
+                for a in tmp[2]:
+                    label2[a]=1
+                return train.astype(float), label2.astype(float)
+            if self.version == 'test':
+                train = np.zeros(88000)
+                label_mapping = {
+                    'event_id': 88000,
+                    'c10': 10,
+                    'c100': 100,
+                    'c1000': 1000,
+                    'c10000': 10000,
+                }
+                label2 = np.zeros(label_mapping.get(self.num_labels, 0))
+                tmp =[]
+                #print(self.test_data)
+                filtered_df = self.test_data[self.test_data['sample_id'] == idx]
+                tmp.append([idx])
+                data_instance = []
+                label = []
+                for l in range(len(filtered_df)):
+                    if filtered_df['eventtime'].iloc[len(filtered_df)-1] - filtered_df['eventtime'].iloc[l] > self.delta:
+                        if self.num_labels=='event_id':
+                            data_instance.append(filtered_df['event_id'].iloc[l])
+                        else: 
+                            data_instance.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                    else:
+                        if self.num_labels=='event_id':
+                            label.append(filtered_df[self.num_labels].iloc[l])
+                        else:
+                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                tmp.append(data_instance)
+                tmp.append(label)
+                for a in tmp[1]:
+                    train[a]=1
+                for a in tmp[2]:
+                    label2[a]=1
+                return train.astype(float), label2.astype(float)
 
-            tmp.append(data_instance)
-            tmp.append(label)
-            for a in tmp[1]:
-                train[a]=1
-            for a in tmp[2]:
-                label2[a]=1
-            return train.astype(float), label2.astype(float)
-
-
-    # def __getitem__(self, idx):
-    #     # Use binary search for efficiency
-    #     i = bisect.bisect_right(self.sample_ids, idx) - 1
-
-    #     # Initialize arrays
-    #     train = np.zeros(88000)
-    #     label2 = np.zeros(88000)
-
-    #     # Filter the dataframe
-    #     filtered_df = self.train_data[i][self.train_data[i]['sample_id'] == idx]
-
-    #     # Compute the time difference
-    #     time_diff = filtered_df['eventtime'].iloc[-1] - filtered_df['eventtime']
-
-    #     # Use boolean indexing for efficiency
-    #     data_instance = filtered_df.loc[time_diff > self.delta, 'event_id']
-    #     label = filtered_df.loc[time_diff <= self.delta, 'event_id']
-
-    #     # Set corresponding indices to 1
-    #     train[data_instance] = 1
-    #     label2[label] = 1
-
-    #     return train.astype(float), label2.astype(float)
     
-
-
-
-
-
-
-
-
-md = MedicalDataset(version='test', num_labels='c10')
-print(md[1])
+# md = MedicalDataset(split_type='1day', version='train', num_labels='c10')
+# for i in range(5000):
+#     print(md[i+500000])
