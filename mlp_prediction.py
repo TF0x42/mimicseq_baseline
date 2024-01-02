@@ -3,12 +3,14 @@ multilayer perceptron to predict the next event
 '''
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
+import torch.distributed as dist
 from sklearn.metrics import accuracy_score
 from data_handler import MedicalDataset
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-
+import os
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 class MLP(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -42,15 +44,28 @@ epochs = 3
 num_samples=1000
 filename = 'test_model.sav'
 
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12344'
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
-def train_model():
+def cleanup():
+    dist.destroy_process_group()
+
+def train_model(rank, world_size):
+    setup(rank, world_size)
+
+    model = MLP(input_size, hidden_size, output_size).to(rank)
+    model = DDP(model, device_ids=[rank])
+    # if use_multiple_gpu:
+    #     model = model.to('cuda')
+    #     model = nn.parallel.DistributedDataParallel(model, device_ids=[0,1], output_device=0)
+
     train_dataset = MedicalDataset(split_type='1day', version='train', num_labels='c10', num_samples=num_samples)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-    model = MLP(input_size, hidden_size, output_size)
-    if use_multiple_gpu:
-        model = model.to('cuda')
-        model = nn.parallel.DistributedDataParallel(model, device_ids=[0,1], output_device=0)
-    #criterion = nn.MSELoss()
+    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank)
+    train_loader = DataLoader(train_dataset, sampler=train_sampler)
+    #train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     for epoch in range(epochs):
@@ -58,8 +73,8 @@ def train_model():
         total_loss = 0.0
         k=0
         for inputs, targets in train_loader:
-            inputs = inputs.float().to('cuda')
-            targets = targets.float().to('cuda')
+            inputs = inputs.float().to(rank)
+            targets = targets.float().to(rank)
             print(f"batch={k}")
             print(inputs)
             k+=1
@@ -78,6 +93,7 @@ def train_model():
         print(f"Epoch [{epoch + 1}/{epochs}] Training Loss: {average_loss:.4f}")
     print("Training finished!")
     torch.save(model.state_dict(), filename)
+    cleanup()
 
 
 def test_model():
@@ -133,5 +149,13 @@ def test_model():
         print(f"Total F1-score: {f_one/num}")
 
 
-train_model()
-test_model()
+# train_model()
+# test_model()
+        
+def main():
+    world_size = torch.cuda.device_count()
+    print(world_size)
+    torch.multiprocessing.spawn(train_model, args=(world_size,), nprocs=world_size, join=True)
+
+if __name__ == "__main__":
+    main()
