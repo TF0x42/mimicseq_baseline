@@ -34,23 +34,27 @@ class MedicalDataset(Dataset):
             pass
         if version=='test':
             self.test_data = pd.read_parquet(path+'/test.parquet')
+            #print(set(self.test_data['sample_id'].to_numpy().tolist()))
 
     def __len__(self):
         if self.version=='train':
+            return 500000
             return self.num_samples  #513741
         # if self.version=='val':
         #     return 100
         if self.version=='test':
+            return 10000
             return int(self.num_samples/10)
         
     def __getitem__(self, idx):
         ## Split Type: 1 day - 1 day
         if self.split_type=='1day':
             if self.version == 'train':
-                return np.zeros(88000), np.zeros(10)
+                # return np.zeros(88000), np.zeros(10)
                 i = 0
                 while idx > self.sample_ids[i]:
                     i+=1
+                #print(idx)
                 train = np.zeros(88000)
                 label_mapping = {
                     'event_id': 88000,
@@ -62,6 +66,7 @@ class MedicalDataset(Dataset):
                 label2 = np.zeros(label_mapping.get(self.num_labels, 0))
                 tmp =[]
                 filtered_df = self.train_data[i][self.train_data[i]['sample_id'] == idx]
+                #print(filtered_df)
                 tmp.append([idx])
                 data_instance = []
                 label = []
@@ -75,7 +80,10 @@ class MedicalDataset(Dataset):
                         if self.num_labels=='event_id':
                             label.append(filtered_df[self.num_labels].iloc[l])
                         else:
-                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            try:
+                                label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            except:
+                                print("some problem")
                 tmp.append(data_instance)
                 tmp.append(label)
                 for a in tmp[1]:
@@ -109,8 +117,11 @@ class MedicalDataset(Dataset):
                         if self.num_labels=='event_id':
                             label.append(filtered_df[self.num_labels].iloc[l])
                         else:
-                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            try:
+                                label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
                             #print(filtered_df['eventtime'].iloc[l])
+                            except:
+                                print("some problem")
                 tmp.append(data_instance)
                 tmp.append(label)
                 for a in tmp[1]:
@@ -118,7 +129,20 @@ class MedicalDataset(Dataset):
                 for a in tmp[2]:
                     label2[a]=1
                 return train.astype(float), label2.astype(float)
-            
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         ## Split Type: everything but last day - last day
         if self.split_type=='everything_but_last_day':
             if self.version == 'train':
@@ -149,7 +173,10 @@ class MedicalDataset(Dataset):
                         if self.num_labels=='event_id':
                             label.append(filtered_df[self.num_labels].iloc[l])
                         else:
-                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            try:
+                                label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            except:
+                                print("some problem")
                 tmp.append(data_instance)
                 tmp.append(label)
                 for a in tmp[1]:
@@ -194,5 +221,9 @@ class MedicalDataset(Dataset):
 
     
 # md = MedicalDataset(split_type='1day', version='train', num_labels='c10')
+# print(md[138724])
 # for i in range(5000):
-#     print(md[i+500000])
+#     print(i+269*511)
+#     print(md[i+269*511])
+            
+#md = MedicalDataset(split_type='1day', version='test', num_labels='c10')

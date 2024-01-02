@@ -20,36 +20,31 @@ class MLP(nn.Module):
         self.sig = nn.Sigmoid()#.type(torch.float64)
 
     def forward(self, x):
-        print("hi x")
-        print(x)
-        print("working 1")
         x = self.fc1(x)
-        print("working 2")
         x = self.relu(x)
         x = self.bn1(x)
         x = self.fc2(x)
         x = self.sig(x)
-        print("working end")
         return x
     
 use_multiple_gpu=True
 input_size = 88000
-hidden_size = 400
+hidden_size = 1000
 output_size = 10
-batch_size = 160
+batch_size = 512
 learning_rate = 0.001
 epochs = 3
-num_samples=1000
+num_samples=100000
 filename = 'test_model.sav'
 
 
 def train_model():
-    train_dataset = MedicalDataset(split_type='1day', version='train', num_labels='c10', num_samples=num_samples)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    train_dataset = MedicalDataset(split_type='1day', version='train', num_labels='c100', num_samples=num_samples)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=128)
     model = MLP(input_size, hidden_size, output_size)
     if use_multiple_gpu:
         model = model.to('cuda')
-        model = nn.parallel.DistributedDataParallel(model, device_ids=[0,1], output_device=0)
+        #model = nn.parallel.DataParallel(model, device_ids=[0,1], output_device=0)
     #criterion = nn.MSELoss()
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -61,19 +56,13 @@ def train_model():
             inputs = inputs.float().to('cuda')
             targets = targets.float().to('cuda')
             print(f"batch={k}")
-            print(inputs)
             k+=1
             optimizer.zero_grad()
             outputs = model(inputs)
-            print("working 3")
             loss = criterion(outputs, targets)
-            print("working")
             loss.backward()
-            print("working")
             optimizer.step()
-            print("working")
             total_loss += loss.item()
-            print("working")
         average_loss = total_loss / len(train_loader)
         print(f"Epoch [{epoch + 1}/{epochs}] Training Loss: {average_loss:.4f}")
     print("Training finished!")
@@ -84,8 +73,8 @@ def test_model():
     model = MLP(input_size, hidden_size, output_size)
     model.load_state_dict(torch.load(filename))
     model.to('cuda:0')
-    test_dataset = MedicalDataset(split_type='1day', version='test', num_labels='c10', num_samples=num_samples)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+    test_dataset = MedicalDataset(split_type='1day', version='test', num_labels='c100', num_samples=num_samples)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=128)
     model.eval()
     with torch.no_grad():
         test_predictions = []
@@ -95,6 +84,7 @@ def test_model():
         prec=0
         rec=0
         f_one=0
+        k=0
         for inputs, targets in test_loader:
             inputs = inputs.float().to('cuda')
             targets = targets.float().to('cuda')
@@ -117,6 +107,8 @@ def test_model():
             precision = precision_score(true_labels, predicted_labels)
             recall = recall_score(true_labels, predicted_labels)
             f1 = f1_score(true_labels, predicted_labels)
+            print(f"batch={k}")
+            k+=1
             print(f"Accuracy: {accuracy:.4f}")
             print(f"Precision: {precision:.4f}")
             print(f"Recall: {recall}")
