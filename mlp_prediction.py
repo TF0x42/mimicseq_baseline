@@ -30,7 +30,7 @@ class MLP(nn.Module):
 use_multiple_gpu=True
 input_size = 88000
 hidden_size = 1000
-output_size = 10
+output_size = 1000
 batch_size = 512
 learning_rate = 0.001
 epochs = 3
@@ -39,7 +39,7 @@ filename = 'test_model.sav'
 
 
 def train_model():
-    train_dataset = MedicalDataset(split_type='1day', version='train', num_labels='c100', num_samples=num_samples)
+    train_dataset = MedicalDataset(split_type='1day', version='train', num_labels='c1000', num_samples=num_samples)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=128)
     model = MLP(input_size, hidden_size, output_size)
     if use_multiple_gpu:
@@ -73,7 +73,7 @@ def test_model():
     model = MLP(input_size, hidden_size, output_size)
     model.load_state_dict(torch.load(filename))
     model.to('cuda:0')
-    test_dataset = MedicalDataset(split_type='1day', version='test', num_labels='c100', num_samples=num_samples)
+    test_dataset = MedicalDataset(split_type='1day', version='test', num_labels='c1000', num_samples=num_samples)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=128)
     model.eval()
     with torch.no_grad():
@@ -126,4 +126,4 @@ def test_model():
 
 
 train_model()
-test_model()
+#test_model()

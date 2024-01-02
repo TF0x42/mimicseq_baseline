@@ -6,4 +6,4 @@ test_model.sav
 testdata.csv
 eventtyper_tmp.csv
 filtered_df_train_5000.csv
-*.csv
+*.sav
