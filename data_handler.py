@@ -210,7 +210,10 @@ class MedicalDataset(Dataset):
                         if self.num_labels=='event_id':
                             label.append(filtered_df[self.num_labels].iloc[l])
                         else:
-                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            try:
+                                label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            except:
+                                print("some problem")
                 tmp.append(data_instance)
                 tmp.append(label)
                 for a in tmp[1]:

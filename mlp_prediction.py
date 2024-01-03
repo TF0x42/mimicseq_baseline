@@ -20,7 +20,7 @@ class MLP(nn.Module):
         self.sig = nn.Sigmoid()#.type(torch.float64)
 
     def forward(self, x):
-        x = self.fc1(x)
+        x = self.fc1(x) 
         x = self.relu(x)
         x = self.bn1(x)
         x = self.fc2(x)
@@ -30,21 +30,21 @@ class MLP(nn.Module):
 use_multiple_gpu=True
 input_size = 88000
 hidden_size = 1000
-output_size = 1000
+output_size = 10000
 batch_size = 512
 learning_rate = 0.001
 epochs = 3
 num_samples=100000
-filename = 'test_model.sav'
-
+filename = 'c10000_multiple_days_shuffle.sav'
+device = torch.device('cuda:0')
 
 def train_model():
-    train_dataset = MedicalDataset(split_type='1day', version='train', num_labels='c1000', num_samples=num_samples)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=128)
-    model = MLP(input_size, hidden_size, output_size)
+    train_dataset = MedicalDataset(split_type='everything_but_last_day', version='train', num_labels='c10000', num_samples=num_samples)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=128)
+    model = MLP(input_size, hidden_size, output_size).float()
     if use_multiple_gpu:
-        model = model.to('cuda')
-        #model = nn.parallel.DataParallel(model, device_ids=[0,1], output_device=0)
+        model = model.to(device)
+        #model = nn.DataParallel(model, device_ids=[0,1,2,3]) #, output_device=0)
     #criterion = nn.MSELoss()
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -53,8 +53,8 @@ def train_model():
         total_loss = 0.0
         k=0
         for inputs, targets in train_loader:
-            inputs = inputs.float().to('cuda')
-            targets = targets.float().to('cuda')
+            inputs = inputs.float().to(device)
+            targets = targets.float().to(device)
             print(f"batch={k}")
             k+=1
             optimizer.zero_grad()
@@ -72,8 +72,8 @@ def train_model():
 def test_model():
     model = MLP(input_size, hidden_size, output_size)
     model.load_state_dict(torch.load(filename))
-    model.to('cuda:0')
-    test_dataset = MedicalDataset(split_type='1day', version='test', num_labels='c1000', num_samples=num_samples)
+    model.to(device)
+    test_dataset = MedicalDataset(split_type='everything_but_last_day', version='test', num_labels='c10000', num_samples=num_samples)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=128)
     model.eval()
     with torch.no_grad():
@@ -86,8 +86,8 @@ def test_model():
         f_one=0
         k=0
         for inputs, targets in test_loader:
-            inputs = inputs.float().to('cuda')
-            targets = targets.float().to('cuda')
+            inputs = inputs.float().to(device)
+            targets = targets.float().to(device)
             outputs = model(inputs)
             #print(inputs)
             print(outputs)
@@ -126,4 +126,4 @@ def test_model():
 
 
 train_model()
-#test_model()
+test_model()
