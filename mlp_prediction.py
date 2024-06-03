@@ -7,15 +7,12 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import accuracy_score
 from data_handler import MedicalDataset
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, precision_recall_curve, auc
 import time
 
 
 
-
-
-
-use_multiple_gpu=False
+use_gpu=False
 input_size = 87899
 hidden_size = 1000
 output_size = 10000
@@ -29,15 +26,6 @@ include_intensities=False
 three_layer = True
 
 
-
-
-
-
-
-
-
-
-
 def loading_bar(iteration, total, bar_length=50):
     progress = (iteration / total)
     arrow = '=' * int(round(bar_length * progress))
@@ -47,24 +35,6 @@ def loading_bar(iteration, total, bar_length=50):
         print(f'[{arrow + spaces}] {percent}% Complete', end='\n')
     else:
         print(f'[{arrow + spaces}] {percent}% Complete', end='\r')
-
-
-# class MLP(nn.Module):
-#     def __init__(self, input_size, hidden_size, output_size):
-#         super(MLP, self).__init__()
-#         self.fc1 = nn.Linear(input_size, hidden_size)
-#         self.relu = nn.ReLU()
-#         self.bn1 = nn.BatchNorm1d(hidden_size)
-#         self.fc2 = nn.Linear(hidden_size, output_size)
-#         self.sig = nn.Sigmoid()
-#
-#     def forward(self, x):
-#         x = self.fc1(x) 
-#         x = self.relu(x)
-#         x = self.bn1(x)
-#         x = self.fc2(x)
-#         x = self.sig(x)
-#         return x
 
 
 class MLP(nn.Module):
@@ -92,17 +62,13 @@ class MLP(nn.Module):
         x = self.sig(x)
         return x
         
-
-
 def train_model():
     start = time.time()
     train_dataset = MedicalDataset(split_type='1day', version='train', num_labels='c10000', num_samples=num_samples)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=128)
     model = MLP(input_size, hidden_size, output_size).float()
-    if use_multiple_gpu:
+    if use_gpu:
         model = model.to(device)
-        #model = nn.DataParallel(model, device_ids=[0,1,2,3]) #, output_device=0)
-    #criterion = nn.MSELoss()
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     print("Starting Training.")
@@ -151,29 +117,24 @@ def test_model():
             inputs = inputs.float().to(device)
             targets = targets.float().to(device)
             outputs = model(inputs)
-            #print(inputs)
-            # print(outputs)
             _, predicted = torch.max(outputs, 1)
             test_predictions.extend(predicted.cpu().numpy())
             test_targets.extend(targets.squeeze().cpu().numpy())
             threshold = 0.5
+            # precision_tmp, recall_tmp, _ = precision_recall_curve(true_labels, outputs.float())
+            # area_under_curve = auc(recall_tmp, precision_tmp)
+
             predicted_labels = (outputs > threshold).float()
             accuracy = (predicted_labels == targets).float().mean()
-            # print(predicted_labels)
-            # print(targets)
             predicted_labels = predicted_labels.cpu().numpy()
             true_labels = targets.cpu().numpy()
-            # print("vorher:")
-            # print(true_labels.shape)
             predicted_labels = predicted_labels.reshape(-1)
             true_labels = true_labels.reshape(-1)
-            # print("nachher:")
-            # print(true_labels.shape)
-            # print(predicted_labels)
             accuracy = accuracy_score(true_labels, predicted_labels)
             precision = precision_score(true_labels, predicted_labels)
             recall = recall_score(true_labels, predicted_labels)
             f1 = f1_score(true_labels, predicted_labels)
+            #print("Area under Precision-Recall Curve:", area_under_curve)
             print(f"batch={k}: Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1-score: {f1:.4f}")
             k+=1
             num+=1
@@ -189,5 +150,5 @@ def test_model():
         print(f"Model: output size={output_size}, filename={filename}")
 
 
-train_model()
+#train_model()
 test_model()
