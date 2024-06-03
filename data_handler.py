@@ -6,14 +6,23 @@ import numpy as np
 import torch
 import bisect
 
-'''
-Build custom Dataset class
-'''
+
+def loading_bar(iteration, total, bar_length=50):
+    progress = ((iteration+1) / total)
+    arrow = '=' * int(round(bar_length * progress))
+    spaces = ' ' * (bar_length - len(arrow))
+    percent = round(progress * 100, 2)
+    if progress ==1:
+        print(f'[{arrow + spaces}] {percent}% Complete', end='\n')
+    else:
+        print(f'[{arrow + spaces}] {percent}% Complete', end='\r')
+
+
 class MedicalDataset(Dataset):
-    def __init__(self, split_type="1day", version='train', num_labels='c10', path = '/home/tobi/cooperation_projects/irregular_time_series/data/big_data', min_num_events=10, days_distance_prediction=1, num_samples=10000):
+    def __init__(self, split_type="1day", version='train', num_labels='c10', path = '/home/tobi/cooperation_projects/irregular_time_series/data/big_data', min_num_events=10, days_distance_prediction=1, num_samples=10000, include_intensities=False):
+        self.include_intensities = include_intensities
         self.num_samples = num_samples
         self.split_type = split_type
-        train_val_test = [0.7, 0.1, 0.2] # 49, 7, 14
         self.num_labels=num_labels
         self.sample_ids=[0]*73  # max is 513741
         self.version = version
@@ -24,10 +33,12 @@ class MedicalDataset(Dataset):
         self.min_num_events = min_num_events
         if version=='train':
             self.train_data = []
+            print("Loading dataset...")
             for i in range(73):
-                print(f"loading instance i={i}")
+                loading_bar(i, 73)
                 train_data = pd.read_parquet(path + '/train-0000000000' + str(i).zfill(2) + '.parquet')
                 self.train_data.append(train_data)
+            print("Dataset loaded.")
             for k in range(len(self.train_data)):
                 self.sample_ids[k]=int(self.train_data[k]['sample_id'].max())
         if version=='val':
@@ -37,23 +48,21 @@ class MedicalDataset(Dataset):
 
     def __len__(self):
         if self.version=='train':
-            return self.num_samples  #513741
-        # if self.version=='val':
-        #     return 100
+            return 513741# -100000
         if self.version=='test':
-            return int(self.num_samples/10)
-        
+            return 10000# -1000
+
     def __getitem__(self, idx):
         ## Split Type: 1 day - 1 day
         if self.split_type=='1day':
             if self.version == 'train':
-                return np.zeros(88000), np.zeros(10)
+                idx = idx #+ 100000
                 i = 0
                 while idx > self.sample_ids[i]:
                     i+=1
-                train = np.zeros(88000)
+                train = np.zeros(87899)
                 label_mapping = {
-                    'event_id': 88000,
+                    'event_id': 87899,
                     'c10': 10,
                     'c100': 100,
                     'c1000': 1000,
@@ -62,33 +71,46 @@ class MedicalDataset(Dataset):
                 label2 = np.zeros(label_mapping.get(self.num_labels, 0))
                 tmp =[]
                 filtered_df = self.train_data[i][self.train_data[i]['sample_id'] == idx]
+                filtered_df.to_csv("tmp.csv")
                 tmp.append([idx])
                 data_instance = []
                 label = []
+                intensities = []
                 for l in range(len(filtered_df)):
                     if filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] < self.delta:
                         if self.num_labels=='event_id':
                             data_instance.append(filtered_df['event_id'].iloc[l])
                         else: 
                             data_instance.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            if not np.isnan(filtered_df['intensity'].iloc[l]):
+                                intensities.append(filtered_df['intensity'].iloc[l])
+                            else: 
+                                intensities.append(1)
                     elif filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] > self.delta and filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] < self.delta2:
                         if self.num_labels=='event_id':
                             label.append(filtered_df[self.num_labels].iloc[l])
                         else:
-                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            try:
+                                label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            except:
+                                print("some problem")
                 tmp.append(data_instance)
                 tmp.append(label)
-                for a in tmp[1]:
-                    train[a]=1
+                for a, b in zip(tmp[1], intensities):
+                    if self.include_intensities:
+                        train[a]=b
+                    else: 
+                        train[a]=1
                 for a in tmp[2]:
                     label2[a]=1
                 return train, label2 #.astype(float)
             if self.version == 'test':
-                train = np.zeros(88000)
+                idx=idx # +1000
+                train = np.zeros(87899)
                 label_mapping = {
-                    'event_id': 88000,
+                    'event_id': 87899,
                     'c10': 10,
-                    'c100': 100,
+                    'c100': 100,  
                     'c1000': 1000,
                     'c10000': 10000,
                 }
@@ -98,36 +120,46 @@ class MedicalDataset(Dataset):
                 tmp.append([idx])
                 data_instance = []
                 label = []
+                intensities=[]
+                self.longenough=False
                 for l in range(len(filtered_df)):
                     if filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] < self.delta:
                         if self.num_labels=='event_id':
                             data_instance.append(filtered_df['event_id'].iloc[l])
                         else: 
                             data_instance.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
-                            #print(filtered_df['eventtime'].iloc[l])
+                            if not np.isnan(filtered_df['intensity'].iloc[l]):
+                                intensities.append(filtered_df['intensity'].iloc[l])
+                            else: 
+                                intensities.append(1)
                     elif filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] > self.delta and filtered_df['eventtime'].iloc[l] - filtered_df['eventtime'].iloc[0] < self.delta2:
                         if self.num_labels=='event_id':
                             label.append(filtered_df[self.num_labels].iloc[l])
                         else:
-                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
-                            #print(filtered_df['eventtime'].iloc[l])
+                            try:
+                                label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            except:
+                                print("some problem")
                 tmp.append(data_instance)
                 tmp.append(label)
-                for a in tmp[1]:
-                    train[a]=1
+                for a, b in zip(tmp[1], intensities):
+                    if self.include_intensities:
+                        train[a]=b
+                    else: 
+                        train[a]=1
                 for a in tmp[2]:
                     label2[a]=1
                 return train.astype(float), label2.astype(float)
-            
+
         ## Split Type: everything but last day - last day
         if self.split_type=='everything_but_last_day':
             if self.version == 'train':
                 i = 0
                 while idx > self.sample_ids[i]:
                     i+=1
-                train = np.zeros(88000)
+                train = np.zeros(87899)
                 label_mapping = {
-                    'event_id': 88000,
+                    'event_id': 87899,
                     'c10': 10,
                     'c100': 100,
                     'c1000': 1000,
@@ -149,18 +181,24 @@ class MedicalDataset(Dataset):
                         if self.num_labels=='event_id':
                             label.append(filtered_df[self.num_labels].iloc[l])
                         else:
-                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            try:
+                                label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            except:
+                                print("some problem")
                 tmp.append(data_instance)
                 tmp.append(label)
                 for a in tmp[1]:
-                    train[a]=1
+                    if self.include_intensities:
+                        train[a]=b
+                    else: 
+                        train[a]=1
                 for a in tmp[2]:
                     label2[a]=1
                 return train.astype(float), label2.astype(float)
             if self.version == 'test':
-                train = np.zeros(88000)
+                train = np.zeros(87899)
                 label_mapping = {
-                    'event_id': 88000,
+                    'event_id': 87899,
                     'c10': 10,
                     'c100': 100,
                     'c1000': 1000,
@@ -168,7 +206,6 @@ class MedicalDataset(Dataset):
                 }
                 label2 = np.zeros(label_mapping.get(self.num_labels, 0))
                 tmp =[]
-                #print(self.test_data)
                 filtered_df = self.test_data[self.test_data['sample_id'] == idx]
                 tmp.append([idx])
                 data_instance = []
@@ -177,22 +214,23 @@ class MedicalDataset(Dataset):
                     if filtered_df['eventtime'].iloc[len(filtered_df)-1] - filtered_df['eventtime'].iloc[l] > self.delta:
                         if self.num_labels=='event_id':
                             data_instance.append(filtered_df['event_id'].iloc[l])
-                        else: 
+                        else:        
                             data_instance.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
                     else:
                         if self.num_labels=='event_id':
                             label.append(filtered_df[self.num_labels].iloc[l])
                         else:
-                            label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            try:
+                                label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
+                            except:
+                                print("some problem")
                 tmp.append(data_instance)
                 tmp.append(label)
                 for a in tmp[1]:
-                    train[a]=1
+                    if self.include_intensities:
+                        train[a]=b
+                    else: 
+                        train[a]=1
                 for a in tmp[2]:
                     label2[a]=1
                 return train.astype(float), label2.astype(float)
-
-    
-# md = MedicalDataset(split_type='1day', version='train', num_labels='c10')
-# for i in range(5000):
-#     print(md[i+500000])
