@@ -3,28 +3,12 @@ multilayer perceptron to predict the next event
 '''
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, DistributedSampler
-import torch.distributed as dist
+from torch.utils.data import DataLoader
 from sklearn.metrics import accuracy_score
 from data_handler import MedicalDataset
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, precision_recall_curve, auc
 import time
-
-
-
-use_gpu=False
-input_size = 87899
-hidden_size = 1000
-output_size = 10000
-batch_size = 512
-learning_rate = 0.001
-epochs = 3
-num_samples=100000
-filename = 'c10000-5k_layer-first_second_day-entire_dataset.sav'
-device = torch.device('cpu')   # cuda:0
-include_intensities=False
-three_layer = True
 
 
 def loading_bar(iteration, total, bar_length=50):
@@ -39,12 +23,13 @@ def loading_bar(iteration, total, bar_length=50):
 
 
 class MLP(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
+    def __init__(self, input_size, hidden_size, output_size, num_layers):
         super(MLP, self).__init__()
+        self.num_layers = num_layers
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.relu = nn.ReLU()
         self.bn1 = nn.BatchNorm1d(hidden_size)
-        if three_layer:
+        if num_layers==3:
             self.fc2 = nn.Linear(hidden_size, hidden_size)
             self.relu2 = nn.ReLU()
             self.bn2 = nn.BatchNorm1d(hidden_size)
@@ -55,7 +40,7 @@ class MLP(nn.Module):
         x = self.fc1(x)
         x = self.relu(x)
         x = self.bn1(x)
-        if three_layer:
+        if self.num_layers==3:
             x = self.fc2(x)
             x = self.relu2(x)
             x = self.bn2(x)
@@ -63,17 +48,24 @@ class MLP(nn.Module):
         x = self.sig(x)
         return x
         
-def train_model():
+def train_model(args):
     start = time.time()
-    train_dataset = MedicalDataset(split_type='1day', version='train', num_labels='c10000', num_samples=num_samples)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=128)
-    model = MLP(input_size, hidden_size, output_size).float()
-    if use_gpu:
-        model = model.to(device)
+    train_dataset = MedicalDataset(split_type='1day', version='train', num_labels=args.clustering, include_intensities=args.include_intensities, skip=args.skip)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=128)
+    label_mapping = {
+        'event_id': 87899,
+        'c10': 10,
+        'c100': 100,  
+        'c1000': 1000,
+        'c10000': 10000,
+    }
+    output_size = label_mapping.get(args.clustering, 0)
+    model = MLP(87899, args.hidden_layer_size, output_size, args.num_layers).float()
+    model = model.to(args.device)
     criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     print("Starting Training.")
-    for epoch in range(epochs):
+    for epoch in range(args.num_epochs):
         now = time.time()
         model.train()
         total_loss = 0.0
@@ -82,8 +74,8 @@ def train_model():
         for inputs, targets in train_loader:
             loading_bar(k, total_items)
             k+=1           
-            inputs = inputs.float().to(device)
-            targets = targets.float().to(device)
+            inputs = inputs.float().to(args.device)
+            targets = targets.float().to(args.device)
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = criterion(outputs, targets)
@@ -92,18 +84,26 @@ def train_model():
             total_loss += loss.item()
         average_loss = total_loss / len(train_loader)
         end = time.time()
-        print(f"Epoch [{epoch + 1}/{epochs}] Training Loss: {average_loss:.4f}, elapsed time: {round((end-now)/60, 2)} minutes")
-    print(f"Model: output size={output_size}, filename={filename}")
+        print(f"Epoch [{epoch + 1}/{args.num_epochs}] Training Loss: {average_loss:.4f}, elapsed time: {round((end-now)/60, 2)} minutes")
+    print(f"Model: output size={output_size}, model_name={args.model_name}")
     print(f"Training finished! Elapsed time: {round((end-start)/60, 2)} minutes")
-    torch.save(model.state_dict(), filename)
+    torch.save(model.state_dict(), args.model_name)
 
 
-def test_model():
-    model = MLP(input_size, hidden_size, output_size)
-    model.load_state_dict(torch.load(filename))
-    model.to(device)
-    test_dataset = MedicalDataset(split_type='1day', version='test', num_labels='c10000', num_samples=num_samples)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=128)
+def test_model(args):
+    label_mapping = {
+        'event_id': 87899,
+        'c10': 10,
+        'c100': 100,  
+        'c1000': 1000,
+        'c10000': 10000,
+    }
+    output_size = label_mapping.get(args.clustering, 0)
+    model = MLP(87899, args.hidden_layer_size, output_size, args.num_layers)
+    model.load_state_dict(torch.load(args.model_name))
+    model.to(args.device)
+    test_dataset = MedicalDataset(split_type='1day', version='test', num_labels=args.clustering, include_intensities=args.include_intensities, skip=args.skip)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=128)
     model.eval()
     with torch.no_grad():
         test_predictions = []
@@ -115,16 +115,13 @@ def test_model():
         f_one=0
         k=0
         for inputs, targets in test_loader:
-            inputs = inputs.float().to(device)
-            targets = targets.float().to(device)
+            inputs = inputs.float().to(args.device)
+            targets = targets.float().to(args.device)
             outputs = model(inputs)
             _, predicted = torch.max(outputs, 1)
             test_predictions.extend(predicted.cpu().numpy())
             test_targets.extend(targets.squeeze().cpu().numpy())
             threshold = 0.5
-            # precision_tmp, recall_tmp, _ = precision_recall_curve(true_labels, outputs.float())
-            # area_under_curve = auc(recall_tmp, precision_tmp)
-
             predicted_labels = (outputs > threshold).float()
             accuracy = (predicted_labels == targets).float().mean()
             predicted_labels = predicted_labels.cpu().numpy()
@@ -135,8 +132,7 @@ def test_model():
             precision = precision_score(true_labels, predicted_labels)
             recall = recall_score(true_labels, predicted_labels)
             f1 = f1_score(true_labels, predicted_labels)
-            #print("Area under Precision-Recall Curve:", area_under_curve)
-            print(f"batch={k}: Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1-score: {f1:.4f}")
+            print(f"batch={k}")
             k+=1
             num+=1
             acc+=accuracy
@@ -148,8 +144,7 @@ def test_model():
         print(f"Total Precision: {prec/num:.4f}")
         print(f"Total Recall: {rec/num}")
         print(f"Total F1-score: {f_one/num}")
-        print(f"Model: output size={output_size}, filename={filename}")
+        print(f"Model: output size={output_size}, model_name={args.model_name}")
 
 
-#train_model()
-test_model()
+

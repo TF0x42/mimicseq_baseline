@@ -1,10 +1,9 @@
 from torch.utils.data import Dataset
 import pandas as pd
-import multiprocessing
 from datetime import timedelta
 import numpy as np
-import torch
-import bisect
+import os
+
 
 
 def loading_bar(iteration, total, bar_length=50):
@@ -19,9 +18,9 @@ def loading_bar(iteration, total, bar_length=50):
 
 
 class MedicalDataset(Dataset):
-    def __init__(self, split_type="1day", version='train', num_labels='c10', path = '/home/tobi/cooperation_projects/irregular_time_series/data/big_data', min_num_events=10, days_distance_prediction=1, num_samples=10000, include_intensities=False):
+    def __init__(self, split_type="1day", version='train', num_labels='c10', path = os.getcwd()+'/data', days_distance_prediction=1, include_intensities=False, skip=False):
+        self.skip=skip
         self.include_intensities = include_intensities
-        self.num_samples = num_samples
         self.split_type = split_type
         self.num_labels=num_labels
         self.sample_ids=[0]*73  # max is 513741
@@ -29,8 +28,7 @@ class MedicalDataset(Dataset):
         self.delta = timedelta(days=days_distance_prediction)
         self.delta2 = timedelta(days=2*days_distance_prediction)
         self.eventtypes = pd.read_parquet(path+'/eventtypes.parquet')
-        self.eventtypes.head(100).to_csv("eventtyper_tmp.csv")
-        self.min_num_events = min_num_events
+        #self.eventtypes.head(100).to_csv("eventtyper_tmp.csv")
         if version=='train':
             self.train_data = []
             print("Loading dataset...")
@@ -48,15 +46,24 @@ class MedicalDataset(Dataset):
 
     def __len__(self):
         if self.version=='train':
-            return 513741# -100000
+            if self.skip:
+                return 513741 -100000
+            else:
+                return 513741
         if self.version=='test':
-            return 10000# -1000
+            if self.skip:
+                return 10000 - 1000
+            else:
+                return 10000
 
     def __getitem__(self, idx):
         ## Split Type: 1 day - 1 day
         if self.split_type=='1day':
             if self.version == 'train':
-                idx = idx #+ 100000
+                if self.skip:
+                    idx = idx +100000
+                else:
+                    idx = idx
                 i = 0
                 while idx > self.sample_ids[i]:
                     i+=1
@@ -71,7 +78,7 @@ class MedicalDataset(Dataset):
                 label2 = np.zeros(label_mapping.get(self.num_labels, 0))
                 tmp =[]
                 filtered_df = self.train_data[i][self.train_data[i]['sample_id'] == idx]
-                filtered_df.to_csv("tmp.csv")
+                #filtered_df.to_csv("tmp.csv")
                 tmp.append([idx])
                 data_instance = []
                 label = []
@@ -93,7 +100,7 @@ class MedicalDataset(Dataset):
                             try:
                                 label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
                             except:
-                                print("some problem")
+                                pass #two instances in the dataset generate a problem for some reason
                 tmp.append(data_instance)
                 tmp.append(label)
                 for a, b in zip(tmp[1], intensities):
@@ -105,7 +112,10 @@ class MedicalDataset(Dataset):
                     label2[a]=1
                 return train, label2 #.astype(float)
             if self.version == 'test':
-                idx=idx # +1000
+                if self.skip:
+                    idx = idx +1000
+                else:
+                    idx = idx
                 train = np.zeros(87899)
                 label_mapping = {
                     'event_id': 87899,
@@ -139,7 +149,7 @@ class MedicalDataset(Dataset):
                             try:
                                 label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
                             except:
-                                print("some problem")
+                                pass #two instances in the dataset generate a problem for some reason
                 tmp.append(data_instance)
                 tmp.append(label)
                 for a, b in zip(tmp[1], intensities):
@@ -184,7 +194,7 @@ class MedicalDataset(Dataset):
                             try:
                                 label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
                             except:
-                                print("some problem")
+                                pass #two instances in the dataset generate a problem for some reason
                 tmp.append(data_instance)
                 tmp.append(label)
                 for a in tmp[1]:
@@ -223,7 +233,7 @@ class MedicalDataset(Dataset):
                             try:
                                 label.append(self.eventtypes[self.num_labels].iloc[filtered_df['event_id'].iloc[l]])
                             except:
-                                print("some problem")
+                                pass #two instances in the dataset generate a problem for some reason
                 tmp.append(data_instance)
                 tmp.append(label)
                 for a in tmp[1]:
