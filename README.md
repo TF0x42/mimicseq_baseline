@@ -16,7 +16,7 @@ python main.py --clustering=c100 --model_name=2x1000_c100_skip.sav --num_layers=
 python main.py --clustering=c1000 --model_name=2x1000_c1000_skip.sav --num_layers=2 --hidden_layer_size=1000 --skip=True
 python main.py --clustering=c10000 --model_name=2x1000_c10000_skip.sav --num_layers=2 --hidden_layer_size=1000 --skip=True
 
-###  2 x 1000 MLP for first day - second day prediction, entire dataset:
+###  3 x 5000 MLP for first day - second day prediction, entire dataset:
 python main.py --clustering=c10000 --model_name=3x5000_c1000_entire.sav --num_layers=3 --hidden_layer_size=5000
 python main.py --clustering=c10000 --model_name=3x5000_c10000_skipsav --num_layers=3 --hidden_layer_size=5000 --skip=True
 
